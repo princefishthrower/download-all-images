@@ -1,6 +1,6 @@
 {
   "name": "retrieve-all-images",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,7 +22,9 @@
   "homepage": "https://github.com/princefishthrower/retrieve-all-images#readme",
   "dependencies": {
     "@types/puppeteer": "^3.0.0",
-    "puppeteer": "^4.0.0"
+    "@types/valid-url": "^1.0.3",
+    "puppeteer": "^4.0.0",
+    "valid-url": "^1.0.9"
   },
   "devDependencies": {
     "typescript": "^3.9.5"

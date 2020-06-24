@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import https from "https";
 import puppeteer from "puppeteer";
+import validUrl from "valid-url";
 import ISrcSet from "./interfaces/ISrcSet";
 
 function wait(ms: number) {
@@ -115,7 +116,12 @@ export async function retrieveAllImages(url: string, outputFolder: string) {
 
   for (let i = 0; i < images.length; i++) {
     const basename = path.basename(images[i]);
-    await download(images[i], path.join(outputFolder, basename));
+
+    // trim and check if src URL is valid before trying to download
+    const srcURL = images[i].trim();
+    if (validUrl.isUri(srcURL)) {
+      await download(srcURL, path.join(outputFolder, basename));
+    }
   }
 
   await browser.close();
