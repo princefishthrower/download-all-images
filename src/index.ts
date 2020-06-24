@@ -1,30 +1,87 @@
 import fs from "fs";
 import path from "path";
 import https from "https";
+import http from "http";
 import puppeteer from "puppeteer";
-import validUrl from "valid-url";
 import ISrcSet from "./interfaces/ISrcSet";
+import validUrl from "valid-url";
+// const validUrl = require('valid-url');
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(() => resolve(), ms));
 }
 
-async function download(url: string, destination: string): Promise<boolean> {
+async function download(url: string, outputFolder: string): Promise<boolean> {
+  if (!validUrl.isWebUri(url)) {
+    console.log("Invalid URL. Skipping this image.");
+    return new Promise((resolve) => {
+      return resolve(true);
+    });
+  }
+  const basename = path.basename(url);
+  const destination = path.join(outputFolder, basename);
   try {
     return new Promise((resolve) => {
       const file = fs.createWriteStream(destination);
-      https
-        .get(url, (response) => {
-          response.pipe(file);
-          file.on("finish", () => {
-            file.close();
+      if (url.startsWith("https://")) {
+        https
+          .get(url, (response) => {
+            response.pipe(file);
+            file.on("finish", () => {
+              file.close();
+            });
+            return resolve(true);
+          })
+          .on("error", (error) => {
+            console.log(error);
+            return resolve(false);
+          });
+      } else if (url.startsWith("http://")) {
+        https
+          .get(url, (response) => {
+            response.pipe(file);
+            file.on("finish", () => {
+              file.close();
+            });
+            return resolve(true);
+          })
+          .on("error", (error) => {
+            console.log(error);
+            return resolve(false);
+          });
+      } else if (url.startsWith("data:image")) {
+        // if it is base64 - try to capture two regex groups: file type, and base64 data
+        const regex = /data:image\/(.*);base64,(.*)/;
+        const matches = url.match(regex);
+        if (matches && matches.length === 3) {
+          const fileType = matches[1];
+          const base64Data = matches[2].replace(/\+/g, " ");
+          const buffer = Buffer.from(base64Data, "base64");
+          const fileName =
+            base64Data.slice(0, 5) + base64Data.slice(-5) + "." + fileType;
+          fs.writeFile(path.join(outputFolder, fileName), buffer, function (
+            err
+          ) {
+            console.log(err);
+            return resolve(false);
           });
           return resolve(true);
-        })
-        .on("error", (error) => {
-          console.log(error);
-          return resolve(false);
-        });
+        }
+      } else {
+        // last try is with https
+        https
+          .get(url, (response) => {
+            response.pipe(file);
+            file.on("finish", () => {
+              file.close();
+            });
+            return resolve(true);
+          })
+          .on("error", (error) => {
+            console.log(error);
+            return resolve(false);
+          });
+      }
     });
   } catch (error) {
     console.error(error);
@@ -53,75 +110,103 @@ export async function retrieveAllImages(url: string, outputFolder: string) {
   // wait for any lazyloaded / API images etc to load
   await wait(5000);
 
-  const images = await page.evaluate((url) => {
+  const imageInfos = await page.evaluate(() => {
     return Array.from(document.images, (e) => {
-      // preferred image is the largest from the source set, so we try that
-      if (e.srcset) {
-        const srcSetList = e.srcset.split(",");
-        const sortedSrcSet: Array<ISrcSet> = srcSetList
-          .filter((srcSet) => {
-            // remove any leading and trailing space
-            srcSet = srcSet.trim();
+      return {
+        src: e.src,
+        srcset: e.srcset ?? "",
+      };
+    });
+  });
 
-            // split at space
-            const content = srcSet.split(" ");
-            return content.length === 2;
-          })
-          .map((srcSet) => {
-            // clean up and create an array of objects with src / size info
-            srcSet = srcSet.trim();
-            const content = srcSet.split(" ");
-            let src = content[0];
+  const srcs = imageInfos.map((imageInfo) => {
+    // preferred image is the largest image available from the source set, so we try that
+    if (imageInfo.srcset !== "") {
+      const srcSetList = imageInfo.srcset.split(",");
+      const sortedSrcSet: Array<ISrcSet> = srcSetList
+        .filter((srcSet: string) => {
+          
+          // remove any leading and trailing space
+          srcSet = srcSet.trim();
 
-            // some srcset only have the relative path - we need the full image path in order to retrieve
-            if (!src.startsWith("http")) {
-              src = url + src;
-            }
+          // split at space
+          const content = srcSet.split(" ");
+          return content.length === 2;
+        })
+        .map((srcSet: string) => {
+          
 
-            // they may also have parameters - remove them
-            const regex = /([^\?]+)(\?.*)?/;
-            const matches = src.match(regex);
-            if (matches && matches.length === 3) {
-              src = matches[1];
-            }
+          // clean up and create an array of objects with src / size info
+          srcSet = srcSet.trim();
+          const content = srcSet.split(" ");
+          let src = content[0];
+          src = src.trim();
 
-            // for the size, remove the 'w' and cast to integer
-            const size = parseInt(content[1].replace("w", ""));
+          // for the size, remove the 'w' and cast to integer
+          const size = parseInt(content[1].replace("w", ""));
 
+          // some srcset also have a weird starting double slash: '//'
+          if (src.startsWith("//")) {
+            src = src.replace("//", "https://");
+          }
+
+          // some srcset only have the relative path - we need the full image path in order to retrieve
+          if (!src.startsWith("http")) {
+            src = url + src;
+          }
+
+          // they may also have parameters - remove them
+          const regex = /([^\?]+)(\?.*)?/;
+          const matches = src.match(regex);
+          if (matches && matches.length === 3) {
+            src = matches[1];
+          }
+
+          if (validUrl.isWebUri(src)) {
             return {
               src,
               size,
             };
-          })
-          .sort((a: ISrcSet, b: ISrcSet) => {
-            // sort by largest size images first
-            return b.size - a.size;
-          });
+          } else {
+            // not valid http or https uri
+            return {
+              src: `https://place-hold.it/${size}x${size}?text=Invalid src url ${src}`,
+              size,
+            };
+          }
+        })
+        .sort((a: ISrcSet, b: ISrcSet) => {
+          // sort by largest size images first
+          return b.size - a.size;
+        });
 
-        if (sortedSrcSet.length > 0) {
-          return sortedSrcSet[0].src;
-        }
+      if (sortedSrcSet.length > 0) {
+        return sortedSrcSet[0].src;
       }
-      // they may also have parameters - remove them
-      const regex = /([^\?]+)(\?.*)?/;
-      const matches = e.src.match(regex);
-      // alert(e.src + " " + JSON.stringify(matches));
-      if (matches && matches.length === 3) {
-        // alert('match yo');
-        return matches[1];
-      }
-      return e.src;
-    });
-  }, url);
-
-  for (let i = 0; i < images.length; i++) {
-    const basename = path.basename(images[i]);
-
-    // trim and check if src URL is valid before trying to download
-    const srcURL = images[i].trim();
-    if (validUrl.isUri(srcURL)) {
-      await download(srcURL, path.join(outputFolder, basename));
     }
+    // they may also have parameters - remove them
+    const regex = /([^\?]+)(\?.*)?/;
+    const matches = imageInfo.src.match(regex);
+    if (matches && matches.length === 3) {
+      if (validUrl.isWebUri(matches[1])) {
+        return matches[1];
+      } else {
+        return `https://place-hold.it/${250}x${250}?text=Invalid src url ${
+          matches[1]
+        }`;
+      }
+    }
+    if (validUrl.isWebUri(imageInfo.src)) {
+      return imageInfo.src;
+    } else {
+      return `https://place-hold.it/${250}x${250}?text=Invalid src url ${
+        imageInfo.src
+      }`;
+    }
+  });
+
+  for (let i = 0; i < srcs.length; i++) {
+    await download(srcs[i], outputFolder);
   }
 
   await browser.close();
