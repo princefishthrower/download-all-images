@@ -1,0 +1,30 @@
+{
+  "name": "retrieve-all-images",
+  "version": "1.0.1",
+  "description": "",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/princefishthrower/retrieve-all-images.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublish": "tsc",
+    "test": "tsc && node dist/test.js"
+  },
+  "keywords": [],
+  "author": "Christopher Frewin (frewin.christopher@gmail.com)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/princefishthrower/retrieve-all-images/issues"
+  },
+  "homepage": "https://github.com/princefishthrower/retrieve-all-images#readme",
+  "dependencies": {
+    "@types/puppeteer": "^3.0.0",
+    "puppeteer": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^3.9.5"
+  }
+}
