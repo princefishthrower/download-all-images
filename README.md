@@ -8,9 +8,9 @@ A function that retrieves all images for a given a webpage and outputs them, nam
 import { retrieveAllImages } from 'retrieve-all-images';
 import path from 'path';
 
-// retrieves all images present on google homepage to folder in project root folder under output-images/
+// retrieves all images present on CNN homepage to folder in project root folder under output-images/
 async function test() {
-    retrieveAllImages('https://google.com', path.join(__dirname, 'output-images'));
+    retrieveAllImages('https://edition.cnn.com', path.join(__dirname, 'output-images'));
 }
 
 test();

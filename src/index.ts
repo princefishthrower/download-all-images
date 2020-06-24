@@ -9,21 +9,29 @@ function wait(ms: number) {
 }
 
 async function download(url: string, destination: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const file = fs.createWriteStream(destination);
-    https
-      .get(url, (response) => {
-        response.pipe(file);
-        file.on("finish", () => {
-          file.close();
+  try {
+    return new Promise((resolve) => {
+      const file = fs.createWriteStream(destination);
+      https
+        .get(url, (response) => {
+          response.pipe(file);
+          file.on("finish", () => {
+            file.close();
+          });
+          return resolve(true);
+        })
+        .on("error", (error) => {
+          console.log(error);
+          return resolve(false);
         });
-        return resolve(true);
-      })
-      .on("error", (error) => {
-        console.log(error);
-        return resolve(false);
-      });
-  });
+    });
+  } catch (error) {
+    console.error(error);
+    console.log("Skipping this image.");
+    return new Promise((resolve) => {
+      return resolve(true);
+    });
+  }
 }
 
 export async function retrieveAllImages(url: string, outputFolder: string) {
