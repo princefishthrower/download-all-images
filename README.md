@@ -1,4 +1,4 @@
-# download-all-images
+# retrieve-all-images
 
 A function that retrieves all images for a given a webpage and outputs them, named as they are on the webpage, to the provided folder path.
 
