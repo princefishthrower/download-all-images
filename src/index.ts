@@ -107,8 +107,8 @@ export async function retrieveAllImages(url: string, outputFolder: string) {
     "window.scrollTo({top: document.body.scrollHeight, left: 0, behavior: 'smooth'})"
   );
 
-  // wait for any lazyloaded / API images etc to load
-  await wait(5000);
+  // wait for quite a while for any lazyloaded / API images etc to load
+  await wait(15000);
 
   const imageInfos = await page.evaluate(() => {
     return Array.from(document.images, (e) => {
