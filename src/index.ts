@@ -5,21 +5,23 @@ import http from "http";
 import puppeteer from "puppeteer";
 import ISrcSet from "./interfaces/ISrcSet";
 import validUrl from "valid-url";
-// const validUrl = require('valid-url');
+import IImageInfo from "./interfaces/IImageInfo";
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(() => resolve(), ms));
 }
 
-async function download(url: string, outputFolder: string): Promise<boolean> {
+async function download(url: string, outputFolder: string): Promise<string> {
+  const filename = path.basename(url);
+  const destination = path.join(outputFolder, filename);
+
   if (!validUrl.isWebUri(url)) {
     console.log("Invalid URL. Skipping this image.");
     return new Promise((resolve) => {
-      return resolve(true);
+      return resolve('');
     });
   }
-  const basename = path.basename(url);
-  const destination = path.join(outputFolder, basename);
+
   try {
     return new Promise((resolve) => {
       const file = fs.createWriteStream(destination);
@@ -30,24 +32,24 @@ async function download(url: string, outputFolder: string): Promise<boolean> {
             file.on("finish", () => {
               file.close();
             });
-            return resolve(true);
+            return resolve(filename);
           })
           .on("error", (error) => {
             console.log(error);
-            return resolve(false);
+            return resolve('');
           });
       } else if (url.startsWith("http://")) {
-        https
+        http
           .get(url, (response) => {
             response.pipe(file);
             file.on("finish", () => {
               file.close();
             });
-            return resolve(true);
+            return resolve(filename);
           })
           .on("error", (error) => {
             console.log(error);
-            return resolve(false);
+            return resolve('');
           });
       } else if (url.startsWith("data:image")) {
         // if it is base64 - try to capture two regex groups: file type, and base64 data
@@ -63,9 +65,9 @@ async function download(url: string, outputFolder: string): Promise<boolean> {
             err
           ) {
             console.log(err);
-            return resolve(false);
+            return resolve('');
           });
-          return resolve(true);
+          return resolve(fileName);
         }
       } else {
         // last try is with https
@@ -75,11 +77,11 @@ async function download(url: string, outputFolder: string): Promise<boolean> {
             file.on("finish", () => {
               file.close();
             });
-            return resolve(true);
+            return resolve(filename);
           })
           .on("error", (error) => {
             console.log(error);
-            return resolve(false);
+            return resolve('');
           });
       }
     });
@@ -87,12 +89,15 @@ async function download(url: string, outputFolder: string): Promise<boolean> {
     console.error(error);
     console.log("Skipping this image.");
     return new Promise((resolve) => {
-      return resolve(true);
+      return resolve('');
     });
   }
 }
 
-export async function retrieveAllImages(url: string, outputFolder: string) {
+export async function retrieveAllImages(
+  url: string,
+  outputFolder: string
+): Promise<Array<IImageInfo>> {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
 
@@ -110,104 +115,134 @@ export async function retrieveAllImages(url: string, outputFolder: string) {
   // wait for quite a while for any lazyloaded / API images etc to load
   await wait(15000);
 
-  const imageInfos = await page.evaluate(() => {
+  const pageImagesInfo = await page.evaluate(() => {
     return Array.from(document.images, (e) => {
       return {
-        src: e.src,
+        src: e.src ?? "",
         srcset: e.srcset ?? "",
+        alt: e.alt ?? "",
       };
     });
   });
 
-  const srcs = imageInfos.map((imageInfo) => {
+  const imageInfos = pageImagesInfo.map((pageImageInfo) => {
     // preferred image is the largest image available from the source set, so we try that
-    if (imageInfo.srcset !== "") {
-      const srcSetList = imageInfo.srcset.split(",");
-      const sortedSrcSet: Array<ISrcSet> = srcSetList
-        .filter((srcSet: string) => {
-          
-          // remove any leading and trailing space
-          srcSet = srcSet.trim();
-
-          // split at space
-          const content = srcSet.split(" ");
-          return content.length === 2;
-        })
-        .map((srcSet: string) => {
-          
-
-          // clean up and create an array of objects with src / size info
-          srcSet = srcSet.trim();
-          const content = srcSet.split(" ");
-          let src = content[0];
-          src = src.trim();
-
-          // for the size, remove the 'w' and cast to integer
-          const size = parseInt(content[1].replace("w", ""));
-
-          // some srcset also have a weird starting double slash: '//'
-          if (src.startsWith("//")) {
-            src = src.replace("//", "https://");
-          }
-
-          // some srcset only have the relative path - we need the full image path in order to retrieve
-          if (!src.startsWith("http")) {
-            src = url + src;
-          }
-
-          // they may also have parameters - remove them
-          const regex = /([^\?]+)(\?.*)?/;
-          const matches = src.match(regex);
-          if (matches && matches.length === 3) {
-            src = matches[1];
-          }
-
-          if (validUrl.isWebUri(src)) {
-            return {
-              src,
-              size,
-            };
-          } else {
-            // not valid http or https uri
-            return {
-              src: `https://place-hold.it/${size}x${size}?text=Invalid src url ${src}`,
-              size,
-            };
-          }
-        })
-        .sort((a: ISrcSet, b: ISrcSet) => {
-          // sort by largest size images first
-          return b.size - a.size;
-        });
-
+    if (pageImageInfo.srcset !== "") {
+      const sortedSrcSet = sortImageSrcSet(pageImageInfo.srcset, url);
       if (sortedSrcSet.length > 0) {
-        return sortedSrcSet[0].src;
+        return {
+          src: sortedSrcSet[0].src,
+          alt: pageImageInfo.alt,
+          filename: ''
+        };
       }
     }
-    // they may also have parameters - remove them
+
+    // the src path may also have parameters in it - remove them
     const regex = /([^\?]+)(\?.*)?/;
-    const matches = imageInfo.src.match(regex);
+    const matches = pageImageInfo.src.match(regex);
     if (matches && matches.length === 3) {
       if (validUrl.isWebUri(matches[1])) {
-        return matches[1];
+        return {
+          src: matches[1],
+          alt: pageImageInfo.alt,
+          filename: ''
+        };
       } else {
-        return `https://place-hold.it/${250}x${250}?text=Invalid src url ${
-          matches[1]
-        }`;
+        return {
+          src: `https://place-hold.it/${250}x${250}?text=Invalid src url ${
+            matches[1]
+          }`,
+          alt: pageImageInfo.alt,
+          filename: ''
+        };
       }
     }
-    if (validUrl.isWebUri(imageInfo.src)) {
-      return imageInfo.src;
+    if (validUrl.isWebUri(pageImageInfo.src)) {
+      return {
+        src: pageImageInfo.src,
+        alt: pageImageInfo.alt,
+        filename: ''
+      };
     } else {
-      return `https://place-hold.it/${250}x${250}?text=Invalid src url ${
-        imageInfo.src
-      }`;
+      return {
+        src: `https://place-hold.it/${250}x${250}?text=Invalid src url ${
+          pageImageInfo.src
+        }`,
+        alt: pageImageInfo.alt,
+        filename: ''
+      };
     }
   });
 
-  for (let i = 0; i < srcs.length; i++) {
-    await download(srcs[i], outputFolder);
+  let finalImageInfos: Array<IImageInfo> = []
+  for (let i = 0; i < imageInfos.length; i++) {
+    const filename = await download(imageInfos[i].src, outputFolder);
+    finalImageInfos.push({
+      src: imageInfos[i].src,
+      alt: imageInfos[i].alt, 
+      filename
+    });
   }
 
   await browser.close();
+
+  return finalImageInfos;
+}
+
+function sortImageSrcSet(srcset: string, url: string): Array<ISrcSet> {
+  const srcSetList = srcset.split(",");
+  return srcSetList
+    .filter((srcSet: string) => {
+      // remove any leading and trailing space
+      srcSet = srcSet.trim();
+
+      // split at space
+      const content = srcSet.split(" ");
+      return content.length === 2;
+    })
+    .map((srcSet: string) => {
+      // clean up and create an array of objects with src / size info
+      srcSet = srcSet.trim();
+      const content = srcSet.split(" ");
+      let src = content[0];
+      src = src.trim();
+
+      // for the size, remove the 'w' and cast to integer
+      const size = parseInt(content[1].replace("w", ""));
+
+      // some srcset also have a weird starting double slash: '//'
+      if (src.startsWith("//")) {
+        src = src.replace("//", "https://");
+      }
+
+      // some srcset only have the relative path - we need the full image path in order to retrieve
+      if (!src.startsWith("http")) {
+        src = url + src;
+      }
+
+      // they may also have parameters - remove them
+      const regex = /([^\?]+)(\?.*)?/;
+      const matches = src.match(regex);
+      if (matches && matches.length === 3) {
+        src = matches[1];
+      }
+
+      if (validUrl.isWebUri(src)) {
+        return {
+          src,
+          size,
+        };
+      } else {
+        // not valid http or https uri
+        return {
+          src: `https://place-hold.it/${size}x${size}?text=Invalid src url ${src}`,
+          size,
+        };
+      }
+    })
+    .sort((a: ISrcSet, b: ISrcSet) => {
+      // sort by largest size images first
+      return b.size - a.size;
+    });
 }

@@ -9,8 +9,16 @@ import { retrieveAllImages } from 'retrieve-all-images';
 import path from 'path';
 
 // retrieves all images present on CNN homepage to folder in project root folder under output-images/
+// also prints out the objects returned which includes the src used to download, the base filename, and the alt
 async function test() {
-    retrieveAllImages('https://edition.cnn.com', path.join(__dirname, 'output-images'));
+  const retrievedImageInfos = await retrieveAllImages(
+    "https://edition.cnn.com",
+    path.join(__dirname, "..", "output-images")
+  );
+  console.log(
+    "Done with image retrieval. Retrieved image data: " +
+      JSON.stringify(retrievedImageInfos)
+  );
 }
 
 test();
